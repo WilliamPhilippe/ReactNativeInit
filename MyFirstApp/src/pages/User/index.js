@@ -1,5 +1,6 @@
 import React, {Component} from 'react';
 import PropTypes from 'prop-types';
+import {ActivityIndicator} from 'react-native';
 import Api from '../../services/api';
 
 import {
@@ -14,6 +15,7 @@ import {
   Info,
   Title,
   Author,
+  Loading,
 } from './styles';
 
 export default class Main extends Component {
@@ -24,24 +26,61 @@ export default class Main extends Component {
   static propTypes = {
     navigation: PropTypes.shape({
       getParam: PropTypes.func,
+      navigate: PropTypes.func,
     }).isRequired,
   };
 
   state = {
     stars: [],
+    loading: false,
+    page: 2,
+    refreshing: false,
   };
 
   async componentDidMount() {
+    this.setState({loading: true});
+
     const {navigation} = this.props;
     const user = navigation.getParam('user');
 
     const response = await Api.get(`/users/${user.login}/starred`);
 
-    this.setState({stars: response.data});
+    this.setState({stars: response.data, loading: false});
   }
 
-  render() {
+  loadMore = async nextpage => {
     const {stars} = this.state;
+    const user = this.props.navigation.getParam('user');
+    try {
+      const response = await Api.get(`/users/${user.login}/starred`, {
+        params: {page: nextpage},
+      });
+      console.tron.log(stars);
+      nextpage += 1;
+      this.setState({
+        stars: nextpage >= 2 ? [...stars, ...response.data] : response.data,
+        page: nextpage,
+        loading: false,
+        refreshing: false,
+      });
+    } catch (error) {
+      console.tron.log(error);
+    }
+  };
+
+  refreshList = async () => {
+    this.setState({refreshing: true, stars: []});
+    await this.loadMore(1);
+  };
+
+  handleNavigate = repository => {
+    const {navigation} = this.props;
+
+    navigation.navigate('WebViewPage', {repository});
+  };
+
+  render() {
+    const {stars, loading, page, refreshing} = this.state;
     const user = this.props.navigation.getParam('user');
 
     return (
@@ -52,19 +91,27 @@ export default class Main extends Component {
           <Bio>{user.bio}</Bio>
         </Header>
 
-        <Stars
-          data={stars}
-          keyExtractor={star => String(star.id)}
-          renderItem={({item}) => (
-            <Starred>
-              <OwnerAvatar source={{uri: item.owner.avatar_url}} />
-              <Info>
-                <Title>{item.name}</Title>
-                <Author>{item.owner.login}</Author>
-              </Info>
-            </Starred>
-          )}
-        />
+        {loading ? (
+          <Loading />
+        ) : (
+          <Stars
+            onRefresh={this.refreshList}
+            refreshing={refreshing}
+            onEndReachedThreshold={0.2}
+            onEndReached={() => this.loadMore(page)}
+            data={stars}
+            keyExtractor={(_, index) => String(index)}
+            renderItem={({item}) => (
+              <Starred onPress={() => this.handleNavigate(item)}>
+                <OwnerAvatar source={{uri: item.owner.avatar_url}} />
+                <Info>
+                  <Title>{item.name}</Title>
+                  <Author>{item.owner.login}</Author>
+                </Info>
+              </Starred>
+            )}
+          />
+        )}
       </Container>
     );
   }
